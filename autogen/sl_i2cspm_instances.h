@@ -1,6 +1,6 @@
 /***************************************************************************//**
  * @file
- * @brief main() function.
+ * @brief I2C simple poll-based master mode driver instances
  *******************************************************************************
  * # License
  * <b>Copyright 2020 Silicon Laboratories Inc. www.silabs.com</b>
@@ -27,46 +27,26 @@
  * 3. This notice may not be removed or altered from any source distribution.
  *
  ******************************************************************************/
-#include "sl_component_catalog.h"
-#include "sl_system_init.h"
-#include "sl_sensor_rht.h"
-#include "app.h"
-#if defined(SL_CATALOG_POWER_MANAGER_PRESENT)
-#include "sl_power_manager.h"
-#endif // SL_CATALOG_POWER_MANAGER_PRESENT
-#if defined(SL_CATALOG_KERNEL_PRESENT)
-#include "sl_system_kernel.h"
-#else // SL_CATALOG_KERNEL_PRESENT
-#include "sl_system_process_action.h"
-#endif // SL_CATALOG_KERNEL_PRESENT
+ 
+#ifndef SL_I2CSPM_INSTANCES_H
+#define SL_I2CSPM_INSTANCES_H
 
-int main(void)
-{
-  // Initialize Silicon Labs device, system, service(s) and protocol stack(s).
-  // Note that if the kernel is present, processing task(s) will be created by
-  // this call.
-  sl_system_init();
-
-  // Initialize the application. For example, create periodic timer(s) or
-  // task(s) if the kernel is present.
-  app_init();
-
-#if defined(SL_CATALOG_KERNEL_PRESENT)
-  // Start the kernel. Task(s) created in app_init() will start running.
-  sl_system_kernel_start();
-#else // SL_CATALOG_KERNEL_PRESENT
-  while (1) {
-    // Do not remove this call: Silicon Labs components process action routine
-    // must be called from the super loop.
-    sl_system_process_action();
-
-    // Application process.
-    app_process_action();
-
-#if defined(SL_CATALOG_POWER_MANAGER_PRESENT)
-    // Let the CPU go to sleep if the system allows it.
-    sl_power_manager_sleep();
+#ifdef __cplusplus
+extern "C" {
 #endif
-  }
-#endif // SL_CATALOG_KERNEL_PRESENT
+
+#include "sl_i2cspm.h"
+
+
+#define SL_I2CSPM_SENSOR_PRESENT
+
+
+extern sl_i2cspm_t *sl_i2cspm_sensor;
+
+void sl_i2cspm_init_instances(void);
+
+#ifdef __cplusplus
 }
+#endif
+
+#endif // SL_I2CSPM_INSTANCES_H

@@ -35,10 +35,16 @@
 #include "sl_sensor_rht.h"
 #include "temperature.h"
 #include "gatt_db.h"
+#define TEMPERATURE_TIMER_SIGNAL                (1<<0)
+
 
 // The advertising set handle allocated from Bluetooth stack.
 static uint8_t advertising_set_handle = 0xff;
 
+struct timer_struct {
+  int connection;
+  int characteristic;
+};
 /**************************************************************************//**
  * Application Init.
  *****************************************************************************/
@@ -71,9 +77,22 @@ SL_WEAK void app_process_action(void)
  *
  * @param[in] evt Event coming from the Bluetooth stack.
  *****************************************************************************/
+
+void my_timer_function(sl_sleeptimer_timer_handle_t *handle, void *data){
+
+  handle = handle;
+  uint8_t * p = (uint8_t *) data;
+  *p  = *(p) + 1;
+  app_log_info("Timer step %d \n",  *p);
+  sl_status_t sc = sl_bt_external_signal(TEMPERATURE_TIMER_SIGNAL);
+  app_assert_status(sc);
+}
+
+
 void sl_bt_on_event(sl_bt_msg_t *evt)
 {
   sl_status_t sc;
+  static struct timer_struct temperature_data;
 
   switch (SL_BT_MSG_ID(evt->header)) {
     // -------------------------------
@@ -112,7 +131,7 @@ void sl_bt_on_event(sl_bt_msg_t *evt)
 
       int16_t BLE_temp;
       sc = tempfunc(&BLE_temp);
-      app_log_info("Result : %d\n", BLE_temp);
+      app_log_info("sensing at the first connection - result : %d\n", BLE_temp);
       break;
 
     // -------------------------------
@@ -144,17 +163,69 @@ void sl_bt_on_event(sl_bt_msg_t *evt)
           app_assert_status(sc);
           app_log_info("Result : %d\n", BLE_temp);
 
-          uint8_t connection = evt->data.evt_gatt_server_user_read_request.connection;
-          uint16_t characteristic = evt->data.evt_gatt_server_user_read_request.characteristic;
+          struct timer_struct local_temperature_data;
+          local_temperature_data.connection = evt->data.evt_gatt_server_user_read_request.connection;
+          local_temperature_data.characteristic = evt->data.evt_gatt_server_user_read_request.characteristic;
           uint8_t att_errorcode = 0;
           size_t value_len = sizeof(BLE_temp);
           uint16_t sent_len;
 
-          sc = sl_bt_gatt_server_send_user_read_response(connection, characteristic, att_errorcode, value_len, (uint8_t *) &BLE_temp, &sent_len);
+          sc = sl_bt_gatt_server_send_user_read_response(local_temperature_data.connection, local_temperature_data.characteristic, att_errorcode, value_len, (uint8_t *) &BLE_temp, &sent_len);
           app_assert_status(sc);
-          app_log_info("Temperature sent : %d\n", sent_len);
+          app_log_info("Temperature sent\n");
       }
       break;
+
+
+    case sl_bt_evt_gatt_server_characteristic_status_id :
+      app_log_info("Button 'Notify' clicked \n");
+
+      if (evt->data.evt_gatt_server_characteristic_status.characteristic == gattdb_temperature
+            && evt->data.evt_gatt_server_characteristic_status.status_flags == sl_bt_gatt_server_client_config) // If the notify request is associated to a temperature
+      {
+
+          temperature_data.characteristic = evt->data.evt_gatt_server_characteristic_status.characteristic;
+          temperature_data.connection = evt->data.evt_gatt_server_characteristic_status.connection;
+
+          int config_flags =  evt->data.evt_gatt_server_characteristic_status.client_config_flags;
+          app_log_info("Notify mode clicked for temperature and flag changed \n");
+          app_log_info("Config notification flag %d\n", config_flags);
+          static sl_sleeptimer_timer_handle_t handle;
+
+          if (config_flags == 1 ) {
+            static uint32_t timeout_ms = 1000;
+            static uint8_t callback_data_iteration = 0; // We use the callback data as a counter of iterations
+            static uint8_t priority = 0;
+            static uint16_t option_flags = 0;
+
+            sc = sl_sleeptimer_start_periodic_timer_ms(
+                (sl_sleeptimer_timer_handle_t *) &handle, timeout_ms, my_timer_function, (uint8_t *) &callback_data_iteration, priority, option_flags);
+            app_log_info("TIMER START DONE!\n");
+            app_assert_status(sc);
+          }
+          else if (config_flags == 0){
+            sc = sl_sleeptimer_stop_timer((sl_sleeptimer_timer_handle_t *) &handle);
+            app_log_info("TIMER STOP DONE!\n");
+            app_assert_status(sc);
+          }
+       }
+      break;
+
+    case sl_bt_evt_system_external_signal_id :
+      if (evt->data.evt_system_external_signal.extsignals == 1){
+
+          int16_t BLE_temp;
+          sc = tempfunc(&BLE_temp);
+          app_assert_status(sc);
+          app_log_info("[Notify] Temp sensed : %d\n", BLE_temp);
+
+          size_t value_len = sizeof(BLE_temp);
+
+          sc = sl_bt_gatt_server_send_notification(temperature_data.connection, temperature_data.characteristic, value_len, (uint8_t *) &BLE_temp);
+          app_assert_status(sc);
+      }
+      break;
+
 
     ///////////////////////////////////////////////////////////////////////////
     // Add additional event handlers here as your application requires!      //
